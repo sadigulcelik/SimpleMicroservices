@@ -11,9 +11,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi import Query, Path
 from typing import Optional
 
+from models.club import ClubCreate, ClubRead, ClubUpdate
 from models.person import PersonCreate, PersonRead, PersonUpdate
 from models.address import AddressCreate, AddressRead, AddressUpdate
 from models.health import Health
+from models.player import PlayerCreate, PlayerRead, PlayerUpdate
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
@@ -22,9 +24,11 @@ port = int(os.environ.get("FASTAPIPORT", 8000))
 # -----------------------------------------------------------------------------
 persons: Dict[UUID, PersonRead] = {}
 addresses: Dict[UUID, AddressRead] = {}
+clubs: Dict[UUID, ClubRead] = {}
+players: Dict[UUID, PlayerRead] = {}
 
 app = FastAPI(
-    title="Person/Address API",
+    title="Person/Address/Club/Player API",
     description="Demo FastAPI app using Pydantic v2 models for Person and Address",
     version="0.1.0",
 )
@@ -159,12 +163,147 @@ def update_person(person_id: UUID, update: PersonUpdate):
     persons[person_id] = PersonRead(**stored)
     return persons[person_id]
 
+
+# -----------------------------------------------------------------------------
+# Club endpoints
+# -----------------------------------------------------------------------------
+
+@app.post("/clubs", response_model=ClubRead, status_code=201)
+def create_club(club: ClubCreate):
+    if club.id in clubs:
+        raise HTTPException(status_code=400, detail="Club  with this ID already exists")
+    clubs[club.id] = ClubRead(**club.model_dump())
+    return clubs[club.id]
+
+@app.get("/clubs", response_model=List[ClubRead])
+def list_clubs(
+    city: Optional[str] = Query(None, description="Filter by city"),
+    name: Optional[str] = Query(None, description="Filter by name"),
+    country: Optional[str] = Query(None, description="Filter by country"),
+):
+    results = list(clubs.values())
+
+    if city is not None:
+        results = [a for a in results if a.city == city]
+    if name is not None:
+        results = [a for a in results if a.name == name]
+    if country is not None:
+        results = [a for a in results if a.country == country]
+
+    return results
+
+@app.get("/clubs/{club_id}", response_model=ClubRead)
+def get_club(club_id: UUID):
+    if club_id not in clubs:
+        raise HTTPException(status_code=404, detail="Club not found")
+    return clubs[club_id]
+
+
+@app.get("/clubs/{club_id}/player", response_model=List[PlayerRead])
+def get_club_players(club_id: UUID):
+    if club_id not in clubs:
+        raise HTTPException(status_code=404, detail="Club not found")
+    return [player for player in players.values() if player.club_id == club_id]
+
+@app.patch("/clubs/{club_id}", response_model=ClubRead)
+def update_club(club_id: UUID, update: ClubUpdate):
+    if club_id not in clubs:
+        raise HTTPException(status_code=404, detail="Club not found")
+    stored = clubs[club_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    clubs[club_id] = ClubRead(**stored)
+    return clubs[club_id]
+
+@app.delete("/clubs/{club_id}")
+def delete_club(club_id: UUID):
+    if club_id not in clubs:
+        raise HTTPException(status_code=404, detail="Club not found")
+    del clubs[club_id]
+
+
+@app.put("/clubs/{club_id}", response_model=ClubRead)
+def put_club(club_id: UUID, club: ClubCreate):
+    if club_id not in clubs:
+        raise HTTPException(status_code=404, detail="Club not found")
+    clubs[club_id] = ClubRead(id = club_id, **club.model_dump(exclude = {"id"}))
+    return clubs[club_id]
+
+
+
+
+
+
+# -----------------------------------------------------------------------------
+# Player endpoints
+# -----------------------------------------------------------------------------
+
+@app.post("/players", response_model=PlayerRead, status_code=201)
+def create_player(player: PlayerCreate):
+    if player.id in players:
+        raise HTTPException(status_code=400, detail="Player with this ID already exists")
+    if player.club_id and not player.club_id in clubs:
+        raise HTTPException(status_code=400, detail="Club with this club id does not exist.")
+    players[player.id] = PlayerRead(**player.model_dump())
+    return players[player.id]
+
+@app.get("/players", response_model=List[PlayerRead])
+def list_players(
+
+    first_name: Optional[str] = Query(None, description="Filter by first name"),
+    last_name: Optional[str] = Query(None, description="Filter by last name"),
+    position: Optional[str] = Query(None, description="Filter by position"),
+    birth_date: Optional[str] = Query(None, description="Filter by date of birth (YYYY-MM-DD)"),
+):
+    results = list(players.values())
+
+    if first_name is not None:
+        results = [p for p in results if p.first_name == first_name]
+    if last_name is not None:
+        results = [p for p in results if p.last_name == last_name]
+    if position is not None:
+        results = [p for p in results if p.position == position]
+    if birth_date is not None:
+        results = [p for p in results if str(p.birth_date) == birth_date]
+
+    return results
+
+@app.get("/players/{player_id}", response_model=PlayerRead)
+def get_player(player_id: UUID):
+    if player_id not in players:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return players[player_id]
+
+@app.patch("/players/{player_id}", response_model=PlayerRead)
+def update_player(player_id: UUID, update: PlayerUpdate):
+    if player_id not in players:
+        raise HTTPException(status_code=404, detail="Player not found")
+    stored = players[player_id].model_dump()
+    stored.update(update.model_dump(exclude_unset=True))
+    players[player_id] = PlayerRead(**stored)
+    return players[player_id]
+
+
+@app.delete("/players/{player_id}")
+def delete_player(player_id: UUID):
+    if player_id not in players:
+        raise HTTPException(status_code=404, detail="Player not found")
+    del players[player_id]
+
+
+@app.put("/players/{player_id}", response_model=PlayerRead)
+def put_player(player_id: UUID, player: PlayerCreate):
+    if player_id not in players:
+        raise HTTPException(status_code=404, detail="Player not found")
+    players[player_id] = PlayerRead(id = player_id, **player.model_dump(exclude = {"id"}))
+    return players[player_id]
+
+
 # -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Person/Address API. See /docs for OpenAPI UI."}
+    return {"message": "Welcome to the Person/Address/Club/Player API. See /docs for OpenAPI UI."}
 
 # -----------------------------------------------------------------------------
 # Entrypoint for `python main.py`
